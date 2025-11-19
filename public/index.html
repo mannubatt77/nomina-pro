@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NóminaPro - Sistema de Gestión</title>
+    
+    <!-- Cargar Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Cargar React y ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Cargar Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Cargar html2pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Estilos Base y de Impresión -->
+    <style>
+        body { background-color: #f9fafb; }
+        
+        /* Indicador de carga para que no se vea blanco mientras inicia React */
+        #loading-indicator { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: white; display: flex; justify-content: center; align-items: center; 
+            z-index: 9999; transition: opacity 0.5s; 
+        }
+
+        @media print {
+            @page { margin: 0.5cm; size: A4; }
+            body, #root, main, .min-h-screen {
+                background-color: white !important;
+                background: white !important;
+                height: auto !important;
+                min-height: 0 !important;
+                overflow: visible !important;
+                display: block !important;
+                position: static !important;
+            }
+            aside, .no-print, button, #loading-indicator { display: none !important; }
+            .max-w-4xl {
+                max-width: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; box-shadow: none !important; border: none !important;
+            }
+            .page-break {
+                display: block; page-break-after: always; break-after: page; position: relative; margin-bottom: 0 !important;
+            }
+            .page-break:last-child { page-break-after: auto; break-after: auto; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Pantalla de carga inicial -->
+    <div id="loading-indicator">
+        <div style="text-align: center;">
+            <h2 style="font-family: sans-serif; color: #3b82f6; margin-bottom: 10px;">Cargando NóminaPro...</h2>
+            <p style="font-family: sans-serif; color: #6b7280; font-size: 12px;">Iniciando sistema...</p>
+        </div>
+    </div>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // 1. Eliminar pantalla de carga cuando React esté listo
+        setTimeout(() => {
+            const loader = document.getElementById('loading-indicator');
+            if(loader) {
+                loader.style.opacity = '0';
+                setTimeout(() => loader.remove(), 500);
+            }
+        }, 800);
+
+        const { useState, useEffect, useRef } = React;
+
+        // 2. CONFIGURACIÓN DEL SERVIDOR (Ruta Relativa para Render)
+        const SERVER_URL = '/send-receipt';
+
+        // --- Íconos SVG ---
+        const Icon = ({ d, className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{d}</svg>
+        );
+        const Icons = {
+            Upload: () => <Icon d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>} />,
+            FileText: () => <Icon d={<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></>} />,
+            Settings: () => <Icon d={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>} />,
+            Users: () => <Icon d={<><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>} />,
+            Dollar: () => <Icon d={<><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></>} />,
+            Search: () => <Icon d={<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>} />,
+            Chevron: () => <Icon d={<polyline points="9 18 15 12 9 6"/>} />,
+            Printer: () => <Icon d={<><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></>} />,
+            Send: () => <Icon d={<><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></>} />,
+            Mail: () => <Icon d={<><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></>} />,
+            Calendar: () => <Icon d={<><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></>} />,
+            Filter: () => <Icon d={<><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></>} />,
+            Layers: () => <Icon d={<><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></>} />,
+            Lock: () => <Icon d={<><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></>} />,
+            Chart: () => <Icon d={<><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></>} />,
+            Download: () => <Icon d={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></>} />,
+            Paperclip: () => <Icon d={<><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></>} />
+        };
+
+        const parseCSVRow = (str) => {
+            const result = [];
+            let current = '';
+            let inQuote = false;
+            for (let i = 0; i < str.length; i++) {
+                const char = str[i];
+                if (char === '"') inQuote = !inQuote;
+                else if (char === ',' && !inQuote) { result.push(current); current = ''; }
+                else current += char;
+            }
+            result.push(current);
+            return result;
+        };
+
+        const cleanText = (val) => {
+            if (!val) return '';
+            return val.toString().replace(/"/g, '').replace(/[\r\n]+/g, '').trim();
+        };
+
+        function NominaApp() {
+            const [view, setView] = useState('dashboard'); 
+            const [companyData, setCompanyData] = useState({
+                name: 'Mi Empresa S.A.',
+                cuit: '30-12345678-9',
+                address: 'Av. Corrientes 1234, CABA',
+                email: 'info@miempresa.com'
+            });
+            
+            const [periodo, setPeriodo] = useState(
+                new Date().toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())
+            );
+            const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
+            
+            const [employees, setEmployees] = useState([]);
+            const [selectedEmployee, setSelectedEmployee] = useState(null);
+            const [batchData, setBatchData] = useState([]); 
+            const [emailStatus, setEmailStatus] = useState({});
+            const [attachments, setAttachments] = useState({});
+
+            useEffect(() => {
+                const savedConfig = localStorage.getItem('nomina_config');
+                if (savedConfig) {
+                    const parsed = JSON.parse(savedConfig);
+                    setCompanyData(parsed);
+                }
+            }, []);
+
+            const handleSaveConfig = (newData) => {
+                setCompanyData(newData);
+                localStorage.setItem('nomina_config', JSON.stringify(newData));
+            };
+
+            const cleanCurrency = (val) => {
+                if (val === undefined || val === null || val === '') return 0;
+                try {
+                    let clean = val.toString().replace(/["$]/g, '').trim();
+                    if (clean.indexOf(',') > clean.indexOf('.') && clean.indexOf('.') !== -1) {
+                        clean = clean.replace(/\./g, '').replace(',', '.');
+                    } else {
+                        clean = clean.replace(/,/g, '');
+                    }
+                    return parseFloat(clean) || 0;
+                } catch (e) { return 0; }
+            };
+
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const rows = e.target.result.split(/\r?\n/).filter(row => row.trim().length > 0);
+                        const data = rows.slice(1).map((rowStr, index) => {
+                            const row = parseCSVRow(rowStr);
+                            if (row.length < 5) return null;
+                            return {
+                                id: Date.now() + index, 
+                                periodo: periodo, 
+                                fechaPago: fechaPago, 
+                                cuit: cleanText(row[0]),
+                                email: cleanText(row[1]),
+                                nombre: cleanText(row[2]),
+                                categoria: cleanText(row[3]),
+                                nivel: cleanText(row[4]),
+                                basico: cleanCurrency(row[5]),
+                                bonificaciones: cleanCurrency(row[6]),
+                                salario: cleanCurrency(row[7]),
+                                alcances: cleanCurrency(row[8]),
+                                devoluciones: cleanCurrency(row[9]),
+                                bruto: cleanCurrency(row[10]),
+                                obraSocial: cleanCurrency(row[11]),
+                                jubilacion: cleanCurrency(row[12]),
+                                caja: cleanCurrency(row[13]),
+                                neto: cleanCurrency(row[14]),
+                            };
+                        }).filter(item => item !== null);
+                        setEmployees(data); 
+                        setView('employees');
+                    } catch (error) { alert("Error al procesar el archivo CSV."); }
+                };
+                reader.readAsText(file);
+            };
+
+            // --- FUNCIÓN DE ENVÍO CON URL RELATIVA ---
+            const handleSendEmail = async (employeeId) => {
+                const emp = employees.find(e => e.id === employeeId);
+                
+                if (!emp || !emp.email || !emp.email.includes('@')) {
+                     alert(`❌ ERROR: No se encontró un email válido.`);
+                     return;
+                }
+
+                setEmailStatus(prev => ({ ...prev, [employeeId]: 'sending' }));
+                
+                let pdfBlob = attachments[employeeId];
+
+                if (!pdfBlob && selectedEmployee && selectedEmployee.id === employeeId) {
+                    const element = document.getElementById('printable-area');
+                    if (element) {
+                        const opt = { margin: 10, filename: 'recibo.pdf', image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+                        pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+                    }
+                }
+
+                if (!pdfBlob) {
+                    alert("⚠️ Por favor adjunta el PDF primero o entra a la vista previa para generarlo automáticamente.");
+                    setEmailStatus(prev => ({ ...prev, [employeeId]: 'error' }));
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('pdf', pdfBlob, `${emp.nombre}_${emp.periodo}.pdf`);
+                formData.append('to', emp.email);
+                formData.append('subject', `Recibo de Sueldo - ${companyData.name}`);
+                formData.append('text', `Hola ${emp.nombre},\n\nAdjunto encontrarás el recibo de sueldo correspondiente al período ${emp.periodo}.\n\nTotal Neto: $${emp.neto.toLocaleString('es-AR', { minimumFractionDigits: 2 })}\n\nSaludos,\n${companyData.name}`);
+
+                try {
+                    // IMPORTANTE: Usa la URL relativa definida arriba
+                    const response = await fetch(SERVER_URL, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        setEmailStatus(prev => ({ ...prev, [employeeId]: 'sent' }));
+                        alert(`✅ Correo enviado exitosamente a ${emp.email}`);
+                    } else {
+                        throw new Error('Error en el servidor');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    setEmailStatus(prev => ({ ...prev, [employeeId]: 'error' }));
+                    alert("❌ Error al conectar con el servidor.");
+                }
+            };
+            
+            const handleAttachmentChange = (employeeId, file) => {
+                setAttachments(prev => ({ ...prev, [employeeId]: file }));
+            };
+
+            const handleBatchPrint = (filteredEmployees) => {
+                setBatchData(filteredEmployees);
+                setView('batch_preview');
+            };
+
+            const handleSelectEmployee = (emp) => {
+                setSelectedEmployee(emp);
+                setView('preview');
+            };
+
+            return (
+                <div className="min-h-screen bg-gray-50 font-sans text-gray-800 flex">
+                    <aside className="w-64 bg-slate-900 text-white hidden md:flex flex-col no-print">
+                        <div className="p-6 border-b border-slate-700">
+                            <h1 className="text-xl font-bold flex items-center gap-2">
+                                <Icons.FileText className="text-blue-400" /> NóminaPro
+                            </h1>
+                        </div>
+                        <nav className="flex-1 p-4 space-y-2">
+                            <NavItem icon={<Icons.Users />} label="Panel General" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                            <NavItem icon={<Icons.Settings />} label="Configurar Empresa" active={view === 'config'} onClick={() => setView('config')} />
+                            <NavItem icon={<Icons.Upload />} label="Importar Datos" active={view === 'upload'} onClick={() => setView('upload')} />
+                            <NavItem icon={<Icons.FileText />} label="Recibos de Sueldo" active={view === 'employees' || view === 'preview' || view === 'batch_preview'} onClick={() => setView('employees')} disabled={employees.length === 0} />
+                        </nav>
+                        <div className="p-4 text-xs text-slate-400 text-center">v3.2.0 - Cloud Stable</div>
+                    </aside>
+                    <main className="flex-1 overflow-y-auto h-screen">
+                        {view === 'config' && <ConfigView data={companyData} onSave={handleSaveConfig} />}
+                        {view === 'upload' && <UploadView onUpload={handleFileUpload} periodo={periodo} setPeriodo={setPeriodo} fechaPago={fechaPago} setFechaPago={setFechaPago} />}
+                        {view === 'employees' && <EmployeeListView employees={employees} onSelect={handleSelectEmployee} emailStatus={emailStatus} onBatchPrint={handleBatchPrint} company={companyData} onAttach={handleAttachmentChange} attachments={attachments} onSendQuick={handleSendEmail} />}
+                        {view === 'preview' && <ReceiptPreview employee={selectedEmployee} company={companyData} onBack={() => setView('employees')} onSend={handleSendEmail} />}
+                        {view === 'batch_preview' && <BatchReceiptPreview employees={batchData} company={companyData} onBack={() => setView('employees')} />}
+                        {view === 'dashboard' && <DashboardView employees={employees} setView={setView} />}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- Componentes Auxiliares ---
+        function NavItem({ icon, label, active, onClick, disabled }) {
+            return <button onClick={onClick} disabled={disabled} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${active ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800'} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>{icon}<span className="font-medium">{label}</span></button>;
+        }
+        function StatCard({ icon, title, value, subValue, colorClass = "text-blue-600" }) { return (<div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full"><div><div className="flex items-center justify-between mb-4"><h3 className="text-gray-500 font-medium text-sm uppercase tracking-wider">{title}</h3><div className={`p-2 bg-opacity-10 rounded-lg ${colorClass.replace('text-', 'bg-')}`}>{icon}</div></div><p className="text-2xl font-bold text-gray-900">{value}</p></div>{subValue && <p className="text-xs text-gray-400 mt-2">{subValue}</p>}</div>); }
+        function SimpleBarChart({ data }) { const max = Math.max(...data.map(d => d.value)) || 1; return (<div className="h-64 flex items-end justify-around gap-4 pt-4">{data.map((item, idx) => (<div key={idx} className="flex flex-col items-center w-full h-full justify-end group"><div className="mb-2 text-xs font-bold text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity">${item.value.toLocaleString('es-AR')}</div><div className={`w-full max-w-[60px] rounded-t-lg transition-all duration-500 ${item.color}`} style={{ height: `${(item.value / max) * 80}%` }}></div><div className="mt-3 text-xs text-gray-500 font-medium text-center">{item.label}</div></div>))}</div>); }
+        function SimpleDonutChart({ data }) { const total = data.reduce((acc, cur) => acc + cur.value, 0) || 1; let currentAngle = 0; const gradientSegments = data.map(item => { const start = currentAngle; const degree = (item.value / total) * 360; currentAngle += degree; return `${item.colorHex} ${start}deg ${currentAngle}deg`; }).join(', '); return (<div className="flex items-center justify-center gap-8"><div className="relative w-40 h-40 rounded-full" style={{ background: `conic-gradient(${gradientSegments})` }}><div className="absolute inset-0 m-auto w-24 h-24 bg-white rounded-full flex items-center justify-center"><span className="text-xs text-gray-400 font-bold">Distribución</span></div></div><div className="space-y-2">{data.map((item, idx) => (<div key={idx} className="flex items-center gap-2 text-sm"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.colorHex }}></span><span className="text-gray-600">{item.label}</span><span className="font-bold text-gray-800 ml-auto">{Math.round((item.value / total) * 100)}%</span></div>))}</div></div>); }
+        function DashboardView({ employees, setView }) { const totalNeto = employees.reduce((acc, emp) => acc + emp.neto, 0); const totalBruto = employees.reduce((acc, emp) => acc + emp.bruto, 0); const totalObraSocial = employees.reduce((acc, emp) => acc + emp.obraSocial, 0); const totalJubilacion = employees.reduce((acc, emp) => acc + emp.jubilacion, 0); const totalCaja = employees.reduce((acc, emp) => acc + emp.caja, 0); const totalAportes = totalObraSocial + totalJubilacion + totalCaja; const format = (n) => `$${n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; const barData = [{ label: 'Bruto Total', value: totalBruto, color: 'bg-blue-500' }, { label: 'Neto a Pagar', value: totalNeto, color: 'bg-green-500' }, { label: 'Total Aportes', value: totalAportes, color: 'bg-red-400' }]; const donutData = [{ label: 'Jubilación', value: totalJubilacion, colorHex: '#60A5FA' }, { label: 'Obra Social', value: totalObraSocial, colorHex: '#34D399' }, { label: 'Caja Comp.', value: totalCaja, colorHex: '#F87171' }]; return (<div className="p-8"><div className="flex justify-between items-center mb-8"><h2 className="text-2xl font-bold text-gray-800">Tablero de Control</h2><span className="text-sm text-gray-500 bg-white px-3 py-1 rounded-full border border-gray-200">{employees.length > 0 ? `Datos cargados: ${employees.length} empleados` : 'Sin datos'}</span></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8"><StatCard icon={<Icons.Dollar className="text-green-600" />} title="Total Neto" value={format(totalNeto)} subValue="A pagar a empleados" colorClass="text-green-600" /><StatCard icon={<Icons.Chart className="text-blue-600" />} title="Total Bruto" value={format(totalBruto)} subValue="Masa salarial total" colorClass="text-blue-600" /><StatCard icon={<Icons.Layers className="text-red-500" />} title="Total Aportes" value={format(totalAportes)} subValue="Retenciones totales" colorClass="text-red-500" /><StatCard icon={<Icons.Users className="text-purple-600" />} title="Empleados" value={employees.length} subValue="Recibos generados" colorClass="text-purple-600" /></div>{employees.length > 0 ? (<div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8"><div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100"><h3 className="font-bold text-gray-700 mb-4">Distribución de Nómina</h3><SimpleBarChart data={barData} /></div><div className="flex flex-col gap-6"><div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex-1"><h3 className="font-bold text-gray-700 mb-4">Composición de Aportes</h3><SimpleDonutChart data={donutData} /></div><div className="grid grid-cols-2 gap-4"><div className="bg-white p-4 rounded-xl border border-gray-100"><p className="text-xs text-gray-500 uppercase">Obra Social</p><p className="text-lg font-bold text-gray-800">{format(totalObraSocial)}</p></div><div className="bg-white p-4 rounded-xl border border-gray-100"><p className="text-xs text-gray-500 uppercase">Caja Comp.</p><p className="text-lg font-bold text-gray-800">{format(totalCaja)}</p></div></div></div></div>) : (<div className="text-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-200"><div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.Upload className="w-8 h-8 text-gray-400" /></div><h3 className="text-lg font-medium text-gray-900">No hay datos para analizar</h3><p className="text-gray-500 mb-6">Importa tu archivo de nómina para ver el análisis financiero.</p><button onClick={() => setView('upload')} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition">Ir a Importar</button></div>)}</div>); }
+        function ConfigView({ data, onSave }) { const [formData, setFormData] = useState(data); const handleCompanyFile = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const text = event.target.result; const lines = text.split(/\r?\n/); let headerIndex = -1; for (let i = 0; i < lines.length; i++) { if (lines[i].toLowerCase().includes("razónsocial") || lines[i].toLowerCase().includes("razón social") || lines[i].includes("RazónSocial")) { headerIndex = i; break; } } if (headerIndex !== -1 && headerIndex + 1 < lines.length) { const dataLine = lines[headerIndex + 1]; const values = parseCSVRow(dataLine.trim() ? dataLine : lines[headerIndex + 2] || ""); if (values.length >= 4) { const newData = { ...formData, name: cleanText(values[0]), cuit: cleanText(values[1]), address: cleanText(values[2]), email: cleanText(values[3]) }; setFormData(newData); onSave(newData); alert("✅ Datos importados correctamente."); } else { alert("El archivo no tiene suficientes columnas."); } } else { alert("No se encontró la fila de encabezados."); } } catch (err) { alert("Error al leer archivo."); } }; reader.readAsText(file); }; return (<div className="p-8 h-full"><h2 className="text-2xl font-bold mb-6 text-gray-800">Configuración de la Empresa</h2><div className="flex flex-col lg:flex-row gap-8 h-full"><div className="flex-1 space-y-6"><form onSubmit={(e) => { e.preventDefault(); onSave(formData); alert("Configuración Guardada"); }} className="space-y-6"><div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative"><div className="absolute top-4 right-4 text-gray-400" title="Solo lectura"><Icons.Lock className="w-5 h-5" /></div><h3 className="font-bold text-gray-800 border-b pb-3 mb-4">Datos Generales</h3><div className="space-y-4"><div><label className="block text-sm font-medium text-gray-500 mb-1">Razón Social</label><input value={formData.name} readOnly className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none cursor-not-allowed" /></div><div><label className="block text-sm font-medium text-gray-500 mb-1">CUIT</label><input value={formData.cuit} readOnly className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none cursor-not-allowed" /></div><div><label className="block text-sm font-medium text-gray-500 mb-1">Domicilio</label><input value={formData.address} readOnly className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none cursor-not-allowed" /></div><div><label className="block text-sm font-medium text-gray-500 mb-1">Email Empresa</label><input value={formData.email} readOnly className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 focus:outline-none cursor-not-allowed" /></div></div></div></form></div><div className="w-full lg:w-1/3"><div className="bg-white p-8 rounded-xl shadow-lg border border-blue-100 h-fit sticky top-6 text-center"><div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.Upload className="w-8 h-8 text-blue-600" /></div><h3 className="text-xl font-bold text-gray-800 mb-2">Importar Configuración</h3><p className="text-gray-500 text-sm mb-8">Carga el archivo <code>ClaveEmpresa.csv</code> para autocompletar los campos.</p><label className="block w-full cursor-pointer group"><div className="w-full h-40 border-2 border-dashed border-blue-300 rounded-xl bg-blue-50 group-hover:bg-blue-100 transition flex flex-col items-center justify-center gap-3"><p className="text-blue-700 font-semibold">Haga clic para subir</p><span className="text-xs text-blue-400">Formato .CSV</span></div><input type="file" accept=".csv, .txt" onChange={handleCompanyFile} className="hidden" /></label><div className="mt-6 bg-yellow-50 border border-yellow-100 p-4 rounded-lg text-left"><p className="text-xs text-yellow-800 flex gap-2"><span className="font-bold">Nota:</span>Los campos están bloqueados.</p></div></div></div></div></div>); }
+        function UploadView({ onUpload, periodo, setPeriodo, fechaPago, setFechaPago }) { return (<div className="p-8 h-full flex flex-col items-center justify-center"><div className="max-w-md w-full"><div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 relative overflow-hidden"><div className="absolute top-0 left-0 w-2 h-full bg-blue-500"></div><h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2"><Icons.Calendar className="text-blue-500" /> Datos del Período</h3><div className="space-y-4"><div><label className="block text-sm font-bold text-gray-600 mb-1">Período de Liquidación</label><input type="text" value={periodo} onChange={(e) => setPeriodo(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ej: Noviembre 2023" /></div><div><label className="block text-sm font-bold text-gray-600 mb-1">Fecha de Pago</label><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" /></div></div></div><div className="text-center"><div className="mb-6 inline-flex items-center justify-center w-20 h-20 bg-blue-100 rounded-full"><Icons.Upload className="w-10 h-10 text-blue-600" /></div><h2 className="text-2xl font-bold mb-2">Cargar Archivo CSV</h2><p className="text-gray-500 mb-8">Arrastra tu archivo aquí.</p><label className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition"><div className="text-center pt-5 pb-6"><p className="text-sm text-gray-500 font-semibold">Click para cargar archivo</p></div><input type="file" className="hidden" accept=".csv, .txt" onChange={onUpload} /></label></div></div></div>); }
+
+        function EmployeeListView({ employees, onSelect, emailStatus, onBatchPrint, company, onAttach, attachments, onSendQuick }) {
+            const [searchTerm, setSearchTerm] = useState("");
+            const [selectedPeriod, setSelectedPeriod] = useState("Todos");
+            const uniquePeriods = ["Todos", ...new Set(employees.map(e => e.periodo))];
+            const filtered = employees.filter(e => {
+                const matchesSearch = e.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || e.cuit.includes(searchTerm);
+                const matchesPeriod = selectedPeriod === "Todos" || e.periodo === selectedPeriod;
+                return matchesSearch && matchesPeriod;
+            });
+            const handleFileClick = (id) => { document.getElementById(`file-input-${id}`).click(); };
+
+            return (
+                <div className="p-8">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
+                        <h2 className="text-2xl font-bold text-gray-800">Recibos de Sueldo</h2>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto items-center">
+                            <div className="relative w-full sm:w-auto"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Icons.Filter className="h-4 w-4 text-gray-500" /></div><select value={selectedPeriod} onChange={(e) => setSelectedPeriod(e.target.value)} className="h-10 pl-10 pr-8 w-full sm:w-48 border border-gray-300 rounded-lg appearance-none bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none cursor-pointer text-sm shadow-sm">{uniquePeriods.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
+                            <div className="relative w-full sm:w-64"><div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><Icons.Search className="h-4 w-4 text-gray-400" /></div><input type="text" placeholder="Buscar empleado..." className="h-10 pl-10 pr-4 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm shadow-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
+                            <button onClick={() => onBatchPrint(filtered)} disabled={filtered.length === 0} className="h-10 flex items-center justify-center gap-2 px-4 bg-slate-800 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition text-sm font-medium w-full sm:w-auto whitespace-nowrap shadow-sm"><Icons.Layers className="w-4 h-4" /><span>Imprimir Lote ({filtered.length})</span></button>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <table className="w-full text-left">
+                            <thead className="bg-gray-50 text-gray-600 font-medium border-b">
+                                <tr>
+                                    <th className="p-4">Nombre</th>
+                                    <th className="p-4">Período</th>
+                                    <th className="p-4">Neto</th>
+                                    <th className="p-4 text-center">Adjuntar</th>
+                                    <th className="p-4 text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                                {filtered.map((emp) => {
+                                    const hasAttachment = attachments[emp.id];
+                                    return (
+                                        <tr key={emp.id} className="hover:bg-gray-50">
+                                            <td className="p-4"><div className="font-bold text-gray-900">{emp.nombre}</div><div className="text-xs text-gray-500">{emp.cuit}</div></td>
+                                            <td className="p-4 text-sm text-gray-600">{emp.periodo}</td>
+                                            <td className="p-4 font-bold text-green-700 text-sm">${emp.neto.toLocaleString('es-AR', {minimumFractionDigits: 2})}</td>
+                                            <td className="p-4 text-center">
+                                                <input type="file" id={`file-input-${emp.id}`} className="hidden" accept=".pdf" onChange={(e) => onAttach(emp.id, e.target.files[0])} />
+                                                <button onClick={() => handleFileClick(emp.id)} className={`flex items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition border ${hasAttachment ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}>
+                                                    <Icons.Paperclip className="w-3 h-3" />
+                                                    {hasAttachment ? (hasAttachment.name.length > 10 ? hasAttachment.name.substring(0, 8)+'...' : hasAttachment.name) : 'Examinar...'}
+                                                </button>
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button onClick={() => onSendQuick(emp.id)} className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-bold text-white transition shadow-sm ${emailStatus[emp.id] === 'sent' ? 'bg-green-500' : 'bg-blue-600 hover:bg-blue-700'}`} disabled={emailStatus[emp.id] === 'sent' || emailStatus[emp.id] === 'sending'}>
+                                                        {emailStatus[emp.id] === 'sending' ? 'Enviando...' : emailStatus[emp.id] === 'sent' ? 'Enviado' : <><Icons.Send className="w-3 h-3" /> Enviar</>}
+                                                    </button>
+                                                    <button onClick={() => onSelect(emp)} className="text-gray-400 hover:text-gray-600"><Icons.Chevron className="w-4 h-4" /></button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        function ReceiptTemplate({ employee, company }) {
+            if (!employee) return <div className="p-8 text-center text-gray-500">Cargando...</div>;
+            const fechaPagoStr = employee.fechaPago ? new Date(employee.fechaPago + 'T12:00:00').toLocaleDateString('es-AR') : '-';
+            const formatCurrency = (val) => (val || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return (
+                <div className="bg-white p-8 border border-gray-200 relative text-black">
+                    <div className="border-b-2 border-gray-800 pb-4 mb-6 flex justify-between items-start">
+                        <div><h1 className="text-2xl font-bold uppercase">{company.name}</h1><p className="text-sm text-gray-600">{company.address}</p><p className="text-sm text-gray-600">CUIT: {company.cuit}</p></div>
+                        <div className="text-right"><h2 className="text-xl font-bold bg-gray-100 px-4 py-2 border border-gray-300">RECIBO DE HABERES</h2><p className="text-sm mt-2">Período: <strong>{employee.periodo}</strong></p><p className="text-sm">Fecha Pago: {fechaPagoStr}</p></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mb-6 bg-gray-50 p-4 border border-gray-200 text-sm"><div><span className="block text-gray-500 text-xs uppercase">Empleado</span><span className="font-bold text-lg">{employee.nombre}</span></div><div><span className="block text-gray-500 text-xs uppercase">CUIT</span><span className="font-mono">{employee.cuit}</span></div><div><span className="block text-gray-500 text-xs uppercase">Categoría</span><span>{employee.categoria}</span></div><div><span className="block text-gray-500 text-xs uppercase">Nivel</span><span>{employee.nivel}</span></div></div>
+                    <table className="w-full text-sm mb-8"><thead><tr className="border-b-2 border-gray-800"><th className="text-left py-2">Concepto</th><th className="text-right py-2">Haberes</th><th className="text-right py-2">Deducciones</th></tr></thead><tbody className="divide-y divide-gray-200"><tr><td className="py-2">Sueldo Básico</td><td className="text-right">{formatCurrency(employee.basico)}</td><td></td></tr>{employee.bonificaciones > 0 && <tr><td className="py-2">Bonificaciones</td><td className="text-right">{formatCurrency(employee.bonificaciones)}</td><td></td></tr>}{employee.salario > 0 && <tr><td className="py-2">Salario Familiar</td><td className="text-right">{formatCurrency(employee.salario)}</td><td></td></tr>}{employee.alcances > 0 && <tr><td className="py-2">Otros Alcances</td><td className="text-right">{formatCurrency(employee.alcances)}</td><td></td></tr>}{employee.devoluciones !== 0 && <tr><td className="py-2">Devoluciones / Anticipos</td><td></td><td className="text-right">{formatCurrency(Math.abs(employee.devoluciones))}</td></tr>}<tr><td className="py-2">Obra Social</td><td></td><td className="text-right">{formatCurrency(employee.obraSocial)}</td></tr><tr><td className="py-2">Jubilación</td><td></td><td className="text-right">{formatCurrency(employee.jubilacion)}</td></tr>{employee.caja > 0 && <tr><td className="py-2">Caja Complementaria</td><td></td><td className="text-right">{formatCurrency(employee.caja)}</td></tr>}</tbody><tfoot className="font-bold border-t-2 border-gray-800 bg-gray-50"><tr><td className="py-3 pl-2">TOTALES</td><td className="text-right">{formatCurrency(employee.bruto)}</td><td className="text-right">{formatCurrency(employee.obraSocial + employee.jubilacion + employee.caja + Math.abs(employee.devoluciones))}</td></tr></tfoot></table>
+                    <div className="flex justify-end mb-12"><div className="bg-gray-900 text-white p-4 rounded shadow w-64 print:bg-gray-200 print:text-black"><span className="block text-xs uppercase opacity-75 mb-1">Neto a Cobrar</span><span className="block text-3xl font-bold border-t border-gray-600 pt-1">$ {formatCurrency(employee.neto)}</span></div></div>
+                    <div className="grid grid-cols-2 gap-12 mt-12 pt-8 text-center"><div className="border-t border-dashed border-gray-400 pt-4"><p className="text-sm font-medium">Firma Empleador</p></div><div className="border-t border-dashed border-gray-400 pt-4"><p className="text-sm font-medium">Firma Empleado</p></div></div>
+                </div>
+            );
+        }
+
+        function ReceiptPreview({ employee, company, onBack, onSend }) {
+            if (!employee) return <div className="p-10 text-center">Cargando...</div>;
+            const handleDownloadPDF = () => {
+                const element = document.getElementById('printable-area');
+                const opt = { margin: 10, filename: `${employee.nombre}_${employee.periodo}.pdf`, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+                html2pdf().set(opt).from(element).save();
+            };
+            return (
+                <div className="p-8 bg-gray-100 min-h-full print:bg-white print:p-0">
+                    <div className="max-w-4xl mx-auto mb-4 flex flex-wrap justify-between items-center no-print gap-4">
+                        <button onClick={onBack} className="text-gray-600 hover:text-gray-900">← Volver</button>
+                        <div className="flex flex-wrap gap-2">
+                            <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 shadow"><Icons.Download size={16} /> PDF</button>
+                            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-white border rounded hover:bg-gray-50 text-gray-700"><Icons.Printer size={16} /> Imprimir</button>
+                            <button onClick={() => onSend(employee.id)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 shadow text-sm"><Icons.Send size={16} /> Enviar (Auto)</button>
+                        </div>
+                    </div>
+                    <div className="max-w-4xl mx-auto shadow-lg" id="printable-area"><ReceiptTemplate employee={employee} company={company} /></div>
+                </div>
+            );
+        }
+
+        function BatchReceiptPreview({ employees, company, onBack }) {
+            return (
+                <div className="p-8 bg-gray-100 min-h-full print:bg-white print:p-0">
+                    <div className="max-w-4xl mx-auto mb-6 flex justify-between items-center no-print"><div className="flex items-center gap-4"><button onClick={onBack} className="text-gray-600 hover:text-gray-900">← Volver</button><h2 className="text-xl font-bold">Vista Previa de Lote ({employees.length} recibos)</h2></div><button onClick={() => window.print()} className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-lg"><Icons.Printer /> IMPRIMIR TODO</button></div>
+                    <div className="max-w-4xl mx-auto" id="printable-batch">{employees.map((emp, index) => (<div key={emp.id} className="page-break mb-8 print:mb-0"><ReceiptTemplate employee={emp} company={company} /><div className="h-8 bg-gray-100 border-b border-dashed border-gray-300 no-print flex items-center justify-center text-gray-400 text-xs">--- Fin del Recibo {index + 1} ---</div></div>))}</div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<NominaApp />);
+    </script>
+</body>
+</html>

@@ -1,24 +1,39 @@
+// 1. Mensaje de inicio inmediato para verificar que Node.js se ejecuta
+console.log("🚀 [Paso 1] Iniciando script del servidor...");
+
 const express = require('express');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs'); // Necesario para buscar el archivo
+const fs = require('fs');
+
+console.log("✅ [Paso 2] Módulos cargados correctamente.");
 
 const app = express();
+// Render asigna un puerto dinámico. Si falla, usa 3000, pero Render NECESITA el suyo.
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// Intentar servir archivos estáticos desde 'public' si existe
+console.log("📂 [Diagnóstico] Directorio actual (__dirname):", __dirname);
+
+// --- CONFIGURACIÓN DE ARCHIVOS ESTÁTICOS ---
+// Intentamos servir desde 'public' y desde la raíz para asegurar que encuentre el HTML
 app.use(express.static(path.join(__dirname, 'public')));
-// Intentar servir archivos estáticos desde la raíz (por si subiste todo suelto)
 app.use(express.static(__dirname));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 // --- CONFIGURACIÓN DE CORREO ---
+// Verificamos si las variables de entorno existen (sin mostrar la contraseña por seguridad)
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    console.log(`📧 [Diagnóstico] Configuración de correo detectada para: ${process.env.EMAIL_USER}`);
+} else {
+    console.warn("⚠️ [ADVERTENCIA] No se detectaron las variables de entorno de correo (EMAIL_USER / EMAIL_PASS).");
+}
+
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -29,79 +44,74 @@ const transporter = nodemailer.createTransport({
 
 // --- RUTAS ---
 
-// Ruta Principal: Lógica "Inteligente" para encontrar tu HTML
+// Ruta Principal: Busca el HTML desesperadamente
 app.get('/', (req, res) => {
-    console.log('🔍 Alguien entró a la página principal. Buscando archivo HTML...');
+    console.log('🔍 [Acceso Web] Solicitud recibida en la raíz "/". Buscando index.html...');
 
-    // Opción 1: Buscar public/index.html (Lo ideal)
-    const pathPublic = path.join(__dirname, 'public', 'index.html');
-    if (fs.existsSync(pathPublic)) {
-        console.log('✅ Encontrado en public/index.html');
-        return res.sendFile(pathPublic);
+    const possiblePaths = [
+        path.join(__dirname, 'public', 'index.html'),
+        path.join(__dirname, 'index.html'),
+        path.join(__dirname, 'NominaPro.html') // Por si acaso quedó con el nombre viejo
+    ];
+
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+            console.log(`✅ [Éxito] Archivo encontrado en: ${p}`);
+            return res.sendFile(p);
+        }
     }
 
-    // Opción 2: Buscar index.html en la raíz (Error común al subir)
-    const pathRoot = path.join(__dirname, 'index.html');
-    if (fs.existsSync(pathRoot)) {
-        console.log('✅ Encontrado en raíz/index.html');
-        return res.sendFile(pathRoot);
-    }
-
-    // Opción 3: Buscar CUALQUIER archivo .html en la raíz (Salvavidas)
+    // Búsqueda de último recurso: cualquier .html
     try {
         const files = fs.readdirSync(__dirname);
         const htmlFile = files.find(file => file.endsWith('.html'));
         if (htmlFile) {
-            console.log(`✅ Encontrado archivo alternativo: ${htmlFile}`);
+            console.log(`✅ [Salvavidas] Usando archivo encontrado: ${htmlFile}`);
             return res.sendFile(path.join(__dirname, htmlFile));
         }
     } catch (e) {
-        console.error("Error buscando archivos:", e);
+        console.error("Error leyendo directorio:", e);
     }
 
-    // Si no encuentra nada, mostrar mensaje de error en pantalla
-    console.error('❌ ERROR CRÍTICO: No se encontró ningún archivo .html');
-    res.send(`
-        <h1>Error de Configuración</h1>
-        <p>El servidor está funcionando, pero no encuentra tu archivo HTML.</p>
-        <p>Asegúrate de que en tu GitHub hayas subido el archivo <b>index.html</b>.</p>
-        <p>Archivos encontrados en la carpeta actual: ${fs.readdirSync(__dirname).join(', ')}</p>
+    console.error('❌ [ERROR CRÍTICO] No se encuentra index.html en el servidor.');
+    res.status(500).send(`
+        <h1>Error de Despliegue</h1>
+        <p>El servidor Node.js arrancó, pero no encuentra tu archivo HTML.</p>
+        <p>Archivos en carpeta actual: ${fs.readdirSync(__dirname).join(', ')}</p>
+        <p>Archivos en carpeta public: ${fs.existsSync(path.join(__dirname, 'public')) ? fs.readdirSync(path.join(__dirname, 'public')).join(', ') : 'Carpeta public no existe'}</p>
     `);
 });
 
+// Ruta para enviar correos
 app.post('/send-receipt', upload.single('pdf'), async (req, res) => {
-    console.log('📨 Recibida petición para enviar correo...');
+    console.log('📨 [Email] Intentando enviar correo...');
     try {
         const { to, subject, text } = req.body;
         const file = req.file;
 
-        if (!file) return res.status(400).send('No se recibió el archivo PDF.');
-        
-        // Verificación de seguridad para evitar crasheos si faltan variables
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-            console.error('❌ Faltan las variables de entorno EMAIL_USER o EMAIL_PASS');
-            return res.status(500).json({ error: 'Error de configuración del servidor: Faltan credenciales.' });
-        }
+        if (!file) return res.status(400).send('Falta el PDF.');
+        if (!process.env.EMAIL_USER) return res.status(500).json({ error: 'Falta configuración de email en el servidor.' });
 
-        const mailOptions = {
-            from: `"NóminaPro System" <${process.env.EMAIL_USER}>`,
-            to: to,
-            subject: subject,
-            text: text,
+        const info = await transporter.sendMail({
+            from: `"NóminaPro" <${process.env.EMAIL_USER}>`,
+            to, subject, text,
             attachments: [{ filename: file.originalname, content: file.buffer }]
-        };
+        });
 
-        const info = await transporter.sendMail(mailOptions);
-        console.log('✅ Correo enviado con éxito: ' + info.response);
-        res.status(200).json({ message: 'Correo enviado exitosamente', info: info });
-
+        console.log('✅ [Email] Enviado:', info.response);
+        res.status(200).json({ message: 'Enviado', info });
     } catch (error) {
-        console.error('❌ Error al enviar:', error);
+        console.error('❌ [Email Error]', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-app.listen(port, () => {
-    console.log(`✅ Servidor NóminaPro corriendo en puerto ${port}`);
-    console.log(`📂 Directorio actual: ${__dirname}`);
+// --- ARRANQUE DEL SERVIDOR ---
+// Escuchar explícitamente en 0.0.0.0 es crucial para algunos entornos de Docker/Render
+app.listen(port, '0.0.0.0', () => {
+    console.log("====================================================");
+    console.log(`✅ [LISTO] Servidor NóminaPro corriendo correctamente`);
+    console.log(`🔌 Escuchando en el puerto: ${port}`);
+    console.log(`🌍 Dirección: http://0.0.0.0:${port}`);
+    console.log("====================================================");
 });

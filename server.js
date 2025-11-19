@@ -1,4 +1,4 @@
-console.log("🚀 INICIANDO SERVIDOR...");
+console.log("🚀 INICIANDO SERVIDOR CON FIX DE CORREO...");
 
 const express = require('express');
 const multer = require('multer');
@@ -12,53 +12,60 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// 1. Servir archivos estáticos (HTML/JS/CSS)
-// Busca en la carpeta 'public' y también en la raíz por seguridad
+// Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname)); 
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 2. Configuración de correo (Protegida para que no rompa el servidor si falta)
+// --- CONFIGURACIÓN DE CORREO CORREGIDA ---
 let transporter = null;
-try {
+
+// Función para inicializar el transportador con configuración explícita
+const initMailer = () => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        console.log("⚙️ Configurando transporte de correo (Puerto 465)...");
         transporter = nodemailer.createTransport({
-            service: 'gmail',
+            host: 'smtp.gmail.com', // Host explícito
+            port: 465,              // Puerto SSL (Más fiable en la nube)
+            secure: true,           // Usar SSL
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASS
-            }
+            },
+            // Opciones adicionales para evitar timeouts
+            tls: {
+                rejectUnauthorized: false // Ayuda si hay problemas de certificados
+            },
+            connectionTimeout: 10000, // 10 segundos máximo para conectar
+            greetingTimeout: 5000,    // 5 segundos para el saludo
+            socketTimeout: 10000      // 10 segundos para el socket
         });
-        console.log("✅ Servicio de correo configurado correctamente.");
+        console.log("✅ Servicio de correo listo.");
     } else {
-        console.log("⚠️ Faltan credenciales de correo (EMAIL_USER/EMAIL_PASS). El servidor funcionará pero no enviará emails.");
+        console.log("⚠️ Faltan credenciales de correo.");
     }
-} catch (error) {
-    console.error("❌ Error configurando correo:", error);
-}
+};
 
-// 3. Ruta Principal (Simple y directa)
+// Inicializamos
+initMailer();
+
 app.get('/', (req, res) => {
     const publicIndex = path.join(__dirname, 'public', 'index.html');
     const rootIndex = path.join(__dirname, 'index.html');
-
     res.sendFile(publicIndex, (err) => {
-        if (err) {
-            console.log("No se encontró en public, buscando en raíz...");
-            res.sendFile(rootIndex, (err2) => {
-                if (err2) {
-                    res.send("<h1>¡El servidor funciona!</h1><p>Pero no encuentro el archivo index.html. Asegúrate de subirlo a GitHub.</p>");
-                }
-            });
-        }
+        if (err) res.sendFile(rootIndex, (err2) => {
+            if (err2) res.send("<h1>Servidor Activo</h1><p>No se encontró index.html</p>");
+        });
     });
 });
 
-// 4. Ruta para enviar correos
 app.post('/send-receipt', upload.single('pdf'), async (req, res) => {
+    console.log("📩 Intento de envío recibido...");
+    
     if (!transporter) {
-        return res.status(500).json({ error: 'El servidor de correo no está configurado. Revisa las variables de entorno en Render.' });
+        console.error("❌ El transportador no está configurado.");
+        return res.status(500).json({ error: 'Configuración de correo no disponible.' });
     }
     
     try {
@@ -67,20 +74,23 @@ app.post('/send-receipt', upload.single('pdf'), async (req, res) => {
 
         if (!file) return res.status(400).send('Falta el PDF.');
 
+        console.log(`📤 Conectando con Gmail para enviar a: ${to}`);
+        
         const info = await transporter.sendMail({
             from: `"NóminaPro" <${process.env.EMAIL_USER}>`,
             to, subject, text,
             attachments: [{ filename: file.originalname, content: file.buffer }]
         });
 
+        console.log("✅ ¡ENVIADO! ID:", info.messageId);
         res.status(200).json({ message: 'Enviado', info });
     } catch (error) {
-        console.error('Error enviando:', error);
-        res.status(500).json({ error: error.message });
+        console.error('❌ Error fatal al enviar:', error);
+        // Devolver el mensaje exacto del error para verlo en la web
+        res.status(500).json({ error: error.message, details: error.code });
     }
 });
 
-// 5. Arrancar el servidor
 app.listen(port, () => {
-    console.log(`✅ Servidor escuchando en el puerto ${port}`);
+    console.log(`✅ Servidor escuchando en puerto ${port}`);
 });

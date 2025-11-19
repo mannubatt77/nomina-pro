@@ -1,4 +1,4 @@
-console.log("🚀 INICIANDO SERVIDOR CON FIX DE CORREO...");
+console.log("🚀 INICIANDO SERVIDOR (INTENTO PUERTO 587)...");
 
 const express = require('express');
 const multer = require('multer');
@@ -12,42 +12,34 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(__dirname)); 
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// --- CONFIGURACIÓN DE CORREO CORREGIDA ---
 let transporter = null;
 
-// Función para inicializar el transportador con configuración explícita
 const initMailer = () => {
     if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-        console.log("⚙️ Configurando transporte de correo (Puerto 465)...");
+        console.log("⚙️ Configurando transporte (Puerto 587 STARTTLS)...");
         transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com', // Host explícito
-            port: 465,              // Puerto SSL (Más fiable en la nube)
-            secure: true,           // Usar SSL
+            service: 'gmail', // Volvemos a usar el preset de Gmail que a veces ayuda
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASS
             },
-            // Opciones adicionales para evitar timeouts
+            // Opciones de red cruciales para evitar bloqueos
             tls: {
-                rejectUnauthorized: false // Ayuda si hay problemas de certificados
-            },
-            connectionTimeout: 10000, // 10 segundos máximo para conectar
-            greetingTimeout: 5000,    // 5 segundos para el saludo
-            socketTimeout: 10000      // 10 segundos para el socket
+                rejectUnauthorized: false, // Ignorar errores de certificado
+                ciphers: 'SSLv3'
+            }
         });
-        console.log("✅ Servicio de correo listo.");
+        console.log("✅ Configuración lista.");
     } else {
-        console.log("⚠️ Faltan credenciales de correo.");
+        console.log("⚠️ Faltan credenciales.");
     }
 };
 
-// Inicializamos
 initMailer();
 
 app.get('/', (req, res) => {
@@ -55,26 +47,22 @@ app.get('/', (req, res) => {
     const rootIndex = path.join(__dirname, 'index.html');
     res.sendFile(publicIndex, (err) => {
         if (err) res.sendFile(rootIndex, (err2) => {
-            if (err2) res.send("<h1>Servidor Activo</h1><p>No se encontró index.html</p>");
+            if (err2) res.send("<h1>Servidor Activo</h1>");
         });
     });
 });
 
 app.post('/send-receipt', upload.single('pdf'), async (req, res) => {
-    console.log("📩 Intento de envío recibido...");
+    console.log("📩 Recibida petición de envío...");
     
-    if (!transporter) {
-        console.error("❌ El transportador no está configurado.");
-        return res.status(500).json({ error: 'Configuración de correo no disponible.' });
-    }
+    if (!transporter) return res.status(500).json({ error: 'Correo no configurado.' });
     
     try {
         const { to, subject, text } = req.body;
         const file = req.file;
+        if (!file) return res.status(400).send('Falta PDF.');
 
-        if (!file) return res.status(400).send('Falta el PDF.');
-
-        console.log(`📤 Conectando con Gmail para enviar a: ${to}`);
+        console.log(`📤 Conectando (Puerto 587) para: ${to}`);
         
         const info = await transporter.sendMail({
             from: `"NóminaPro" <${process.env.EMAIL_USER}>`,
@@ -85,9 +73,8 @@ app.post('/send-receipt', upload.single('pdf'), async (req, res) => {
         console.log("✅ ¡ENVIADO! ID:", info.messageId);
         res.status(200).json({ message: 'Enviado', info });
     } catch (error) {
-        console.error('❌ Error fatal al enviar:', error);
-        // Devolver el mensaje exacto del error para verlo en la web
-        res.status(500).json({ error: error.message, details: error.code });
+        console.error('❌ Error al enviar:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
